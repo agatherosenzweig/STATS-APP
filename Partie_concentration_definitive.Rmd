@@ -1,0 +1,329 @@
+---
+  title: "Concentration de la vacance longue durée en Isère"
+author: "Agathe ROSENZWEIG"
+date: "18/02/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#install.packages('knitr')
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+install.packages('readr')
+install.packages("tidyverse")
+install.packages("questionr")
+install.packages('rmarkdown')
+install.packages('markdown')
+install.packages('OasisR')
+install.packages('gglorenz')
+install.packages('ggplot2')
+install.packages('ineq')
+install.packages('hhi')
+
+
+library(hhi)
+library(rmarkdown)
+library(markdown)
+library(OasisR)
+library(ggplot2)
+library(gglorenz)
+library(ineq)
+library(data.table)
+```
+
+```{r}
+data <- read.csv("data_tmp.csv",sep=',')
+data_p <- filter(data, data$dep == "38")
+rm(data)
+```
+
+
+```{r}
+data_p$vacance_fric <- data_p$vacancy - data_p$ld_vacancy 
+data_p$prop_occ <- ifelse(data_p$comparaison == "Propriété occupante", 1,0)
+```
+
+
+
+```{r}
+
+
+ld_vacancy_somme_commune <- aggregate(x = data_p$ld_vacancy,by = list(data_p$codecommune), FUN = sum) 
+prop_occ_somme_commune <- aggregate(x = data_p$prop_occ,by = list(data_p$codecommune), FUN = sum)
+res_sec_somme_commune <- aggregate(x = data_p$res_secondaire,by = list(data_p$codecommune), FUN = sum) 
+prive_loc_somme_commune <- aggregate(x = data_p$prive_loc,by = list(data_p$codecommune), FUN = sum) 
+vacance_fric_somme_commune <- aggregate( x= data_p$vacance_fric,by = list(data_p$codecommune), FUN = sum) 
+```
+
+
+
+```{r}
+ld_vacancy_somme_cadastre <- aggregate(x = data_p$ld_vacancy,by = list(data_p$cadastre), FUN = sum) 
+prop_occ_somme_cadastre <- aggregate(x = data_p$prop_occ,by = list(data_p$cadastre), FUN = sum)
+res_sec_somme_cadastre <- aggregate(x = data_p$res_secondaire,by = list(data_p$cadastre), FUN = sum) 
+prive_loc_somme_cadastre <- aggregate(x = data_p$prive_loc,by = list(data_p$cadastre), FUN = sum) 
+vacance_fric_somme_cadastre <- aggregate( x= data_p$vacance_fric,by = list(data_p$cadastre), FUN = sum) 
+
+ld_vacancy_share_commune <- ld_vacancy_somme_commune$x/ nrow(data_p[data_p$ld_vacancy == 1,])
+vacance_fric_share_commune <- vacance_fric_somme_commune$x/nrow(data_p[data_p$vacance_fric == 1,])
+prop_occ_share_commune <- prop_occ_somme_commune$x/nrow(data_p[data_p$prop_occ == 1,])
+res_sec_share_commune <- res_sec_somme_commune$x/nrow(data_p[data_p$res_secondaire == 1,]) 
+prive_loc_share_commune <- prive_loc_somme_commune$x/nrow(data_p[data_p$prive_loc == 1,])
+
+
+ld_vacancy_share_cadastre <- ld_vacancy_somme_cadastre$x/ nrow(data_p[data_p$ld_vacancy == 1,])
+vacance_fric_share_cadastre <- vacance_fric_somme_cadastre$x/nrow(data_p[data_p$vacance_fric == 1,])
+prop_occ_share_cadastre <- prop_occ_somme_cadastre$x/nrow(data_p[data_p$prop_occ == 1,])
+res_sec_share_cadastre <- res_sec_somme_cadastre$x/nrow(data_p[data_p$res_secondaire == 1,]) 
+prive_loc_share_cadastre <- prive_loc_somme_cadastre$x/nrow(data_p[data_p$prive_loc == 1,])
+
+
+```
+
+
+
+##Courbe de Lorenz
+```{r}
+plot(Lc(ld_vacancy_somme_commune$x), main = "Courbe de Lorenz - Vacance longue durée")
+abline(v = 0.8, lty = 2, col = "cornflowerblue")
+abline(h = 0.27, lty = 2, col = "cornflowerblue")
+
+plot(Lc(prop_occ_somme_commune$x), main = "Courbe de Lorenz - propriété occupante")
+abline(v = 0.8, lty = 2, col = "cornflowerblue")
+abline(h = 0.27, lty = 2, col = "cornflowerblue")
+
+
+plot(Lc(res_sec_somme_commune$x), main = "Courbe de Lorenz - Résidence secondaire")
+abline(v = 0.8, lty = 2, col = "cornflowerblue")
+abline(h = 0.27, lty = 2, col = "cornflowerblue")
+
+plot(Lc(prive_loc_somme_commune$x), main = "Courbe de Lorenz - Parc privé locatif ")
+abline(v = 0.8, lty = 2, col = "cornflowerblue")
+abline(h = 0.27, lty = 2, col = "cornflowerblue")
+
+
+plot(Lc(vacance_fric_somme_commune$x), main = "Courbe de Lorenz - propriété occupante")
+abline(v = 0.8, lty = 2, col = "cornflowerblue")
+abline(h = 0.27, lty = 2, col = "cornflowerblue")
+
+
+```
+
+##Indice de HH
+#Commune
+```{r}
+print(c("indice de Herfindahl-Hirschman vacance longue durée : ", hhi(data.frame(ld_vacancy_share_commune))))
+print(c("indice de Herfindahl-Hirschman résidences secondaires : ", hhi(data.frame(res_sec_share_commune))))
+print(c("indice de Herfindahl-Hirschman propriété occupante : ", hhi(data.frame(prop_occ_share_commune))))
+print(c("indice de Herfindahl-Hirschman vacance frictionnelle : ", hhi(data.frame(vacance_fric_share_commune))))
+print(c("indice de Herfindahl-Hirschman propriété occupante : ", hhi(data.frame(prive_loc_share_commune))))
+```
+#Cadastre
+
+```{r}
+print(c("indice de Herfindahl-Hirschman vacance longue durée : ", hhi(data.frame(ld_vacancy_share_cadastre))))
+print(c("indice de Herfindahl-Hirschman résidences secondaires : ", hhi(data.frame(res_sec_share_cadastre))))
+print(c("indice de Herfindahl-Hirschman propriété occupante : ", hhi(data.frame(prop_occ_share_cadastre))))
+print(c("indice de Herfindahl-Hirschman vacance frictionnelle : ", hhi(data.frame(vacance_fric_share_cadastre))))
+print(c("indice de Herfindahl-Hirschman parc privé locatif : ", hhi(data.frame(prive_loc_share_cadastre))))
+print(1/length(ld_vacancy_share_cadastre))
+```
+
+
+##Indice du Theil
+
+```{r}
+print(c("Indice du Theil - Vacance longue durée ",ineq(ld_vacancy_share_commune, type = "Theil")))
+print(c("Indice du Theil - Vacance frictionnelle",ineq(vacance_fric_share_commune, type = "Theil")))
+print(c("Indice du Theil- Propriété occupante",ineq(prop_occ_share_commune, type = "Theil")))
+print(c("Indice du Theil - Parc privé locatif",ineq(prive_loc_share_commune, type = "Theil")))
+print(c("Indice du Theil - Résidences secondaires ",ineq(res_sec_share_commune, type = "Theil")))
+
+#Cadastre
+print(c("Indice du Theil - Vacance longue durée ",ineq(ld_vacancy_share_cadastre, type = "Theil")))
+print(c("Indice du Theil - Vacance frictionnelle",ineq(vacance_fric_share_cadastre, type = "Theil")))
+print(c("Indice du Theil - Résidences secondaires ",ineq(res_sec_share_cadastre, type = "Theil")))
+print(c("Indice du Theil- Propriété occupante",ineq(prop_occ_share_cadastre, type = "Theil")))
+print(c("Indice du Theil - Parc privé locatif",ineq(prive_loc_share_cadastre, type = "Theil")))
+```
+
+##Indice de Gini 
+
+```{r}
+print(c("Indice de Gini - Vacance longue durée ",ineq(ld_vacancy_share_commune, type = "Gini")))
+print(c("Indice de Gini - Vacance frictionnelle",ineq(vacance_fric_share_commune, type = "Gini")))
+print(c("Indice de Gini- Propriété occupante",ineq(prop_occ_share_commune, type = "Gini")))
+print(c("Indice de Gini - Parc privé locatif",ineq(prive_loc_share_commune, type = "Gini")))
+print(c("Indice de Gini - Résidences secondaires ",ineq(res_sec_share_commune, type = "Gini")))
+
+#Cadastre
+print(c("Indice de Gini - Vacance longue durée ",ineq(ld_vacancy_share_cadastre, type = "Gini")))
+print(c("Indice de Gini - Vacance frictionnelle",ineq(vacance_fric_share_cadastre, type = "Gini")))
+print(c("Indice de Gini - Propriété occupante",ineq(prop_occ_share_cadastre, type = "Gini")))
+print(c("Indice de Gini - Parc privé locatif",ineq(prive_loc_share_cadastre, type = "Gini")))
+print(c("Indice de Gini - Résidences secondaires ",ineq(res_sec_share_cadastre, type = "Gini")))
+```
+
+##Indice de Bell
+
+On prépare la matrice pour calculer l'indice de Bell. 
+```{r}
+data_bell_com <- data.frame(ld_vacancy = ld_vacancy_somme_commune$x, vacance_fric = vacance_fric_somme_commune$x, prop_occ =  prop_occ_somme_commune$x, res_sec = res_sec_somme_commune$x, prive_loc =  prive_loc_somme_commune$x)
+
+data_bell_com
+
+data_bell_cad <- data.frame(ld_vacancy = ld_vacancy_somme_cadastre$x, vacance_fric = vacance_fric_somme_cadastre$x, prop_occ =  prop_occ_somme_cadastre$x, res_sec = res_sec_somme_cadastre$x, prive_loc =  prive_loc_somme_cadastre$x)
+
+data_bell_cad
+```
+
+
+```{r}
+library(OasisR)
+
+data_bell_com <- as.matrix(data_bell_com)
+data_bell_cad <- as.matrix(data_bell_cad)
+print(Eta2(data_bell_com))
+print(Eta2(data_bell_cad))
+
+```
+
+##Indice de corrélation spatiale de Moran
+
+On a besoin des coordonnées GPS des communes de la région pour calculer cet indice.
+
+```{r}
+
+```
+
+
+```{r}
+library(GADMTools)
+
+ARH_dep <- gadm_sf_loadCountries("FRA", level = 2) %>% 
+        gadm_subset(level=1, regions="Auvergne-Rhône-Alpes")  
+plotmap(ARH_dep) 
+
+ld_vacancy <- aggregate(x = data_p$ld_vacancy,by = list(data_p$dep_nom), FUN = sum) 
+ld_vacancy <- rename.variable(ld_vacancy, "Group.1", "Libellé")
+ld_vacancy <- rename.variable(ld_vacancy, "x", "ld_vac")
+
+
+population <- data.frame (Libellé  = c("Ain", "Allier", "Ardèche", "Cantal", "Drôme", "Isère", "Loire", "Haute-Loire", "Puy-de-Dôme", "Rhône", "Savoie", "Haute-Savoie"),
+                  pop = c(649700, 339000, 328600, 144200, 516200, 1272800	, 762500, 227400, 655200, 1878100, 433800,829700	))
+
+data_to_map <- merge(population, ld_vacancy, on = "Code", all.x = TRUE)
+data_to_map <- data_to_map %>% 
+   mutate(Taux_ld = ld_vac/pop* 100)
+
+
+data_to_map <- data.frame(data_to_map)
+    choropleth(ARH_dep, 
+               data = data_to_map, 
+               step=4,
+               value = "Taux_ld", 
+               adm.join = "Libellé",
+               breaks = "quantile", 
+               palette = c("blue", "red", "green", "yellow", "orange"),
+               legend="Taux de logements vacants pour 100 habitants",
+                title="Logements vacants en Auvergne-Rhône-Alpes") 
+
+```
+```{r}
+ARH_Allier <- gadm_sf_loadCountries("FRA", level = 5) %>% 
+        gadm_subset(level=2, regions="Allier")  
+
+ARH_Rh <- gadm_sf_loadCountries("FRA", level = 5) %>% 
+        gadm_subset(level=2, regions="Rhône")  
+
+ARH_I <- gadm_sf_loadCountries("FRA", level = 5) %>% 
+        gadm_subset(level=2, regions="Isère")  
+
+ld_vacancy <- aggregate(x = data_p$ld_vacancy,by = list(data_p$codecommune), FUN = sum) 
+ld_vacancy <- rename.variable(ld_vacancy, "Group.1", "Code")
+ld_vacancy <- rename.variable(ld_vacancy, "x", "ld_vac")
+
+
+population <- read.csv("data_def.csv", sep =",")
+population <- rename.variable(population, "data_synthese.population_18", "pop")
+population <- rename.variable(population, "data_synthese.Code", "Code")
+population <- rename.variable(population, "data_synthese.Libellé", "Libellé")
+
+population
+
+data_to_map <- merge(population, ld_vacancy, on = "Code", all.x = TRUE)
+data_to_map <- data_to_map %>% 
+   mutate(Taux_ld = ld_vac/pop* 100)
+
+data_to_map
+data_to_map <- data.frame(data_to_map)
+    choropleth(ARH_Allier, 
+               data = data_to_map, 
+               step=4,
+               value = "Taux_ld", 
+               adm.join = "Libellé",
+               breaks = "quantile", 
+               palette = "Reds",
+               legend="Taux de logements vacants pour 100 habitants",
+                title="Logements vacants en Allier") 
+    
+
+data_to_map <- data.frame(data_to_map)
+    choropleth(ARH_Rh, 
+               data = data_to_map, 
+               step=4,
+               value = "Taux_ld", 
+               adm.join = "Libellé",
+               breaks = "quantile", 
+               palette = "Reds",
+               legend="Taux de logements vacants pour 100 habitants",
+                title="Logements vacants dans le Rhône") 
+    
+data_to_map <- data.frame(data_to_map)
+  choropleth(ARH_I, 
+               data = data_to_map, 
+               step=4,
+               value = "Taux_ld", 
+               adm.join = "Libellé",
+               breaks = "quantile", 
+               palette = "Reds",
+               legend="Taux de logements vacants pour 100 habitants",
+                title="Logements vacants dans l'Isère") 
+    
+
+```
+
+
+
+
+
+
+```{r}
+library(spdep)
+library(ape)
+
+data_p <- read.csv("data_tmp.csv", sep = ",", nrow = 100)
+
+
+data_p$geo_x <- as.numeric(data_p$geo_x)
+data_p$geo_y <- as.numeric(data_p$geo_y)
+data_p$ld_vacancy <- as.numeric(data_p$ld_vacancy)
+
+ozone.dists <- as.matrix(dist(cbind(data_p$geo_x, data_p$geo_y)))
+
+ozone.dists.inv <- 1/ozone.dists
+diag(ozone.dists.inv) <- 0
+
+lw <- nb2listw(ozone.dists.inv, style="W", zero.policy=TRUE)
+moran.test(data_p$ld_vacancy, ozone.dists.inv)
+```
+
+```{r}
+
+```
+

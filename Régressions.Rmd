@@ -1,0 +1,257 @@
+---
+title: "Regressions_09_02"
+author: "Blanche Lalouette, Paula Guillot-Séguier, Agathe Rosenzweig et Eva Youinou"
+date: "09/02/2021"
+output:
+  html_notebook
+---
+
+  - 1. Importation de la base et sélection des variables utiles
+  
+  - 2. Régressions logistiques 
+      - 2.1. Sans indications géographiques comme variables explicatives
+      - 2.2 Avec indications géographiques comme variables explicatives
+      
+  - 3. Régressions avec effets fixes
+  - 4. Régression logistique multinomiale
+      
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,include=FALSE}
+library(stargazer)
+library(viridis)
+library(readr)
+library(tidyverse)
+library(plm)
+library(dplyr)
+library(questionr)
+library(corrplot)
+library(Hmisc)
+library(lmtest)
+library(margins)
+library(psych)
+library(sandwich)
+library(ggplot2)
+library(broom)
+library(plm)
+library(nnet)
+library(MASS)
+library(car)
+library(pglm)
+library(rsq)
+library(Rcpp)
+library(rpart)
+library(DMwR)
+library(rpart.plot)
+library(ROCR)
+library(questionr)
+library(pROC)
+library(dplyr)
+library(eeptools)
+library(randomForest)
+library(fastDummies)
+library(tidyverse)
+library(rattle)
+library(caret)
+```
+
+# 1. Importation de data_p et sélection des variables
+Comme on ne dispose pas pour le 
+```{r,include=FALSE}
+data <- read.csv("data_tmp.csv",sep=',')
+data_p <- filter(data, dep == "38")
+rm(data)
+```
+
+
+Sélection des variables du modèle :
+```{r}
+y_multi <- data_p$comparaison
+
+data_p$surf_pp_inf_10 <- ifelse(data_p$surf_pp<10, 1, 0)
+data_p$surf_pp_sup_30 <- ifelse(data_p$surf_pp>30, 1, 0)
+data_p$construction <- ifelse(data_p$ff_jannath<1939, "Construction avant 1939", ifelse( data_p$ff_jannath<=1964, "Construction entre 1939 et 1964", "Construction après 1964"))
+data_p$nb_piece_sup_4 <- ifelse(data_p$ff_npiece_p2>4, 1, 0)
+data_p$dep_sup_15 <- ifelse(data_p$dependance>15, 1, 0)
+
+
+var_model = c("codecommune","dep", "ff_idcom", "maison", "ff_stoth", "ff_npiece_p2", "ff_jannath", "nb_droits", "ff_dnbbai", "ff_dnbdou", "ff_dnbwc", "ff_dcapec2", "ff_annss", "constr_avant_1900", "constr_apres_1994", "confort_1_2_3_4", "confort_7_8", "abs_baign","nb_baign_sup_3","abs_douche","nb_douche_sup_3","abs_wc","nb_wc_sup_3","nosani","surf_inf_25","surf_sup_100", "zero_piece","nb_piece_inf_1","nb_piece_sup_5","dependance", "existence_dependance","dep_sup_67","coprop","type_proprietaire","date_naissance_ante_1940","date_naissance_post_2002","nb_droits_sup_3","nb_droits_unique","nb_logements","nb_logements_sup_3","logement_unique","dep_nom", "ld_vacancy","taxe_vac", "surf_pp", "construction", "nb_piece_sup_4", "dep_sup_15")               
+
+data_p <- data_p[, var_model]
+```
+
+Sélection des variables factorielles : 
+```{r}
+
+liste_facteurs = c("codecommune", "dep", "ff_idcom", "maison"
+, "constr_avant_1900", "constr_apres_1994", "confort_1_2_3_4", "confort_7_8", "abs_baign","nb_baign_sup_3","abs_douche","nb_douche_sup_3","abs_wc","nb_wc_sup_3","nosani","surf_inf_25","surf_sup_100"
+, "zero_piece","nb_piece_inf_1","nb_piece_sup_5","existence_dependance","dep_sup_67","coprop","type_proprietaire"
+,"date_naissance_ante_1940","date_naissance_post_2002","nb_droits_sup_3","nb_droits_unique",
+"nb_logements_sup_3","logement_unique","dep_nom", "ld_vacancy", "taxe_vac", "construction", "nb_piece_sup_4","dep_sup_15", "surf_pp_inf_10", "surf_pp_sup_30")
+
+liste_num <- var_model[! var_model %in% liste_facteurs]
+print(liste_num)
+
+for (i in liste_facteurs){
+  data_p[,i] <- as.factor(data_p[,i])
+    }
+```
+
+
+
+
+
+```{r}
+
+DT <- rpart(ld_vacancy ~ ff_npiece_p2 + dependance+ ff_annss + ff_stoth, data = data_p, method ="class", cp = 0)
+
+bestcp <- DT$cptable[which.min(DT$cptable[,"xerror"]),"CP"]
+tree.pruned <- prune(DT, cp = bestcp)
+
+rpart.plot(tree.pruned, main = "Détermination des seuils", cex = 0.6, ycompress = FALSE, compress = FALSE, type = 3, under = TRUE, branch = 0.65)
+
+#print(rpart.rules(x = tree.pruned, cover = TRUE))
+
+```
+
+
+
+```{r}
+
+```
+
+
+# 2. Régression logistique
+
+
+### 2.1. Sans indications géographiques comme variables explicatives
+
+On crée le dataframe X_1, qui contient toutes les variables explicatives, à l'exception de celles qui présentent une indication géographique. 
+```{r}
+liste_geo <- c('codecommune', 'dep', 'ff_idcom','dep_nom', "taxe_vac")
+liste_facteurs <- liste_facteurs[! liste_facteurs %in% liste_geo]
+```
+
+
+
+On scale les variables quantitatives afin d'obtenir des coefficients interprétables facilement. 
+```{r}
+data_1 <- data_p[, liste_facteurs]
+```
+
+
+```{r}
+liste_1 <- liste_facteurs[! liste_facteurs %in% c("ld_vacancy")]
+formula_1 <- as.formula(paste("ld_vacancy ~", paste(liste_1, collapse="+")))
+print(formula_1)
+
+fit_1 <- glm(formula_1, family=binomial(link='logit'), data = data_1)
+
+print(summary(fit_1))
+```
+
+
+```{r}
+R2_1 <- with(summary(fit_1), 1 - deviance/null.deviance)
+```
+
+Visualisation des données : 
+
+On ne veut visualiser que les variables qui sont significatives.
+
+
+```{r}
+coef<-data.frame(tidy(fit_1))
+coef<-coef[-1,]
+plot3 <- ggplot(coef, aes(x=term,y=estimate)) +
+ geom_bar(stat="identity",color = viridis(length(liste_facteurs)), fill = viridis(length(liste_facteurs)))+
+  theme_classic() +scale_x_discrete(labels = liste_facteurs)+ 
+  labs(x = "Variables explicatives", y ="Coefficients estimés") + theme(legend.text = element_text(size = 10))+ theme(text = element_text(size = 7)) + scale_x_discrete(liste_facteurs)
+plot3 + coord_flip()
+
+```
+
+
+## 2.2 Avec indications géographiques comme variables explicatives
+
+Comme dans la sous-partie précédente, on scale les variables quantitatives afin d'obtenir des coefficients interprétables facilement. On a rajouté seulement la variable code commune ici car on atteint les limites de la mémoire vive. 
+```{r}
+data_2 <- data_p[, liste_0]
+data_2<- data_2 %>% mutate_at(liste_num, ~(scale(.) %>% as.vector))
+```
+
+
+```{r}
+liste_2 <- append(liste_1, c("dep_nom"))
+
+formula_2 <- as.formula(paste("ld_vacancy ~", paste(liste_2, collapse="+")))
+
+fit_2 <- glm(formula_2, family=binomial(link='logit'), data = data_2)
+```
+
+```{r}
+print(summary(fit_2))
+```
+
+```{r}
+R2_2 <- with(summary(fit_2), 1 - deviance/null.deviance)
+```
+
+Reste à lister les variables qui ont une p-value < 0.05, et afficher les coefficients comme dans la partie précédente. 
+
+
+# 3. Régressions avec effets fixes
+
+On intégre maintenant à notre régression un effet fixe sur la commune pour pouvoir interprêter les résultats à localisation donnée et ne pas biaiser nos coeeficients.
+
+```{r,warning=FALSE}
+liste_fe <- append(liste_1, c("codecommune"))
+formula_fe <- as.formula(paste("ld_vacancy ~", paste(liste_fe, collapse="+")))
+
+fit_fe <-pglm(formula_fe, data=data_p, model = "within", index = "codecommune", family=binomial(link='logit'), start = "38001")
+help(pglm)
+stargazer(fit_fe,fit_1, type = 'text', header = FALSE)
+```
+
+```{r}
+R2_fe <- with(summary(fit_fe), 1 - deviance/null.deviance)
+```
+
+```{r}
+coef_fe <- data.frame(tidy(fit_fe))
+plot_fe <- ggplot(coef, aes(x=term,y=estimate)) +
+  geom_bar(stat="identity",color = viridis(16), fill = viridis(16)) +
+  theme_classic() +
+  labs(x = "Explanatory variables")
+plot6 + coord_flip()
+```
+
+
+
+# 4. Régression logistique multinomiale
+
+On réalise une régression de la variable catégorielle "comparaison" qui résume les différents statuts des logements en utilisant un modèle logit multinomial.
+
+```{r, warning=FALSE}
+data_3 <- data.frame(data_1, y_multi)
+formula_multi <- as.formula(paste("y_multi ~", paste(liste_1, collapse="+")))
+fit_multinom <-multinom(formula_multi,data=data_p)
+
+summary(logit)
+```
+
+
+```{r}
+R2_multinom <- with(summary(fit_multinom), 1 - deviance/null.deviance)
+```
+
+```{r}
+coefficients<-tidy(fit_multinom, conf.int = TRUE)
+ggplot(coefficients, aes(x=term, y=estimate, fill=y.level))+
+  geom_bar(stat = 'identity', position = 'dodge',color = viridis(68), fill = viridis(68))+
+  theme_classic()+
+  coord_flip()+
+  facet_wrap(~y.level, as.table = TRUE, ncol=2)
+```

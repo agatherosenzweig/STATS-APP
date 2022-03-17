@@ -1,0 +1,156 @@
+---
+title: "Random forest"
+author: "Agathe ROSENZWEIG"
+date: "18/02/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(questionr)
+library(corrplot)
+library(Hmisc)
+library(lmtest)
+library(margins)
+library(psych)
+library(rmarkdown)
+library(markdown)
+library(ggplot2)
+library(lubridate)
+library(car)
+library(ggplot2)
+library(Rcpp)
+library(rpart)
+library(rpart.plot)
+library(ROCR)
+library(questionr)
+library(pROC)
+library(dplyr)
+library(eeptools)
+library(randomForest)
+library(fastDummies)
+library(tidyverse)
+library(caret)
+library(caTools)
+```
+
+```{r,include=FALSE}
+data_p <- read.csv("data_tmp.csv",sep=',')
+```
+
+
+```{r}
+var_model = c("maison","nb_baign_sup_3","nb_douche_sup_3","nb_wc_sup_3","nosani", "nb_piece_inf_1","dep_sup_15","coprop","type_proprietaire","nb_droits_sup_3","nb_droits_unique",
+"nb_logements_sup_3","logement_unique"
+, "ld_vacancy","surf_pp_inf_10", "surf_pp_sup_30", "nb_piece_sup_4", "naissance_proprietaire", "construction", "confort_1_2_3_4", "confort_7_8", "taxe_vac")
+
+data_p <- data_p[, var_model]
+
+liste_facteurs <- c("maison","nb_baign_sup_3","nb_douche_sup_3","nb_wc_sup_3","nosani", "nb_piece_inf_1","dep_sup_15","coprop","type_proprietaire","nb_droits_sup_3","nb_droits_unique",
+"nb_logements_sup_3","logement_unique"
+,"surf_pp_inf_10", "surf_pp_sup_30", "nb_piece_sup_4", "naissance_proprietaire", "construction",  "confort_1_2_3_4", "confort_7_8", "ld_vacancy", "taxe_vac")
+
+for (i in liste_facteurs){
+  data_p[,i] <- as.factor(data_p[,i])
+}
+
+```
+
+
+Constitution de la base de train et de test
+```{r}
+
+df_1 <- data_p[data_p$ld_vacancy == 1,]
+n_1 <- 0.7* nrow(df_1)
+index_1 <- sample(nrow(df_1), n_1)
+df_1_train <- df_1[index_1, ]
+df_1_test <- df_1[-index_1, ]
+
+#On garde dans exactement le même nombre de logements non vacants qu'il y a de logements vacants
+
+df_0 <- data_p[data_p$ld_vacancy == 0,]
+index_0 <- sample(nrow(df_0), nrow(df_1))
+df_0 <- df_0[index_0,]
+
+#On sépare cette base en une base train et une base test
+df_0_train <- df_0[index_1, ]
+df_0_test <- df_0[-index_1, ]
+rm(df_0)
+rm(df_1)
+
+test <- rbind(df_1_test, df_0_test)
+train <- rbind(df_1_train, df_0_train)
+rm(df_0_train)
+rm(df_0_test)
+rm(df_1_train)
+rm(df_1_test)
+rm(index_0)
+rm(index_1)
+
+formula_1 <- as.formula(paste("ld_vacancy ~", paste(liste_facteurs, collapse="+")))
+rm(liste_facteurs)
+```
+
+
+###Arbre de classification
+
+```{r}
+DT <- rpart(formula_1, data = train, method = 'class')
+rpart.plot(DT, type = 4, main = "Arbre de décision pour la vacance des logements")
+```
+
+```{r}
+y_pred <-predict(DT, test, type = 'class')
+table_mat <- table(test$ld_vacancy, y_pred) ; table_mat
+```
+
+```{r}
+accuracy_Test <- sum(diag(table_mat)) / sum(table_mat)
+print(paste('Accuracy for test', accuracy_Test))
+```
+### Random forest
+
+```{r}
+library(randomForest)
+Rf <- randomForest(formula_1, data = train, ntree = 100, na.action = na.omit)
+```
+
+```{r}
+Rf.imp <- importance(Rf, type=2)
+colnames(Rf.imp)
+
+varImportance = data.frame(Variables = row.names(Rf.imp),
+                           Importance = round(Rf.imp[, 'MeanDecreaseGini'],2))
+varImportance <- filter(varImportance, varImportance$Variables != "ld_vacancy")
+rankImportance = varImportance[order(-varImportance$Importance),] 
+
+par(mar=c(12,4,4,4))
+barplot(height=rankImportance$Importance, names=rankImportance$Variables, col="#69b3a2", las=2)
+```
+
+
+```{r}
+#Prediction in the test dataset
+
+
+
+y_pred <-predict(Rf, test, type = 'class')
+table_mat <- table(test$ld_vacancy, y_pred) ; table_mat
+```
+
+cm <- confusionMatrix(as.factor(round(predRf)), as.factor(test$ld_vacancy))
+cm
+```
+
+
+```{r}
+render("Random_forest.Rmd")
+```
+
+

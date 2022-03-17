@@ -1,0 +1,325 @@
+---
+title: "Projet Stats-App"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Installation de l'environnement de travail
+
+  - 1. Chargement des packages nécessaires
+  - 2. Importation des bases de données
+  - 3. Création des variables expliquées
+  - 4. Création des variables explicatives
+          - 4.1. Caractéristiques des logements
+          - 4.2. Caractéristiques propres aux logements vacants
+          - 4.3. Caractéristiques des propriétaires
+  - 5. Renommage de certaines variables
+  - 6. Merge de data_p et de data_taxe
+  - 7. Exportation de la base finale 
+  
+## 1. Chargement des packages nécessaires
+```{r}
+library(readr)
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(questionr)
+library(corrplot)
+library(Hmisc)
+library(lmtest)
+library(margins)
+library(psych)
+library(rmarkdown)
+library(markdown)
+library(ggplot2)
+library(lubridate)
+library(car)
+```
+
+## 2. Importation des bases de données
+```{r}
+base <- read.csv("base.csv",sep=',')
+data_taxe <- read_excel("THLV_TLV.xlsx")
+```
+
+
+## 3. Création des variables expliquées
+
+Création de la base du parc privé :
+```{r}
+data_p <- filter(base, ff_ccogrm==0 | ff_ccogrm==7 | ff_ccogrm==8 | is.na(ff_ccogrm))
+rm(base)
+```
+
+Création des variables correspondant à la vacance (vacancy), à la vacance longue durée (ld_vacandata_p$debutvacancecy), et à la non vacantes : 
+```{r}
+data_p$vacancy <- ifelse(data_p$ff_ccthp=='V', 1, 0)
+data_p$ld_vacancy <- ifelse(data_p$vacancy==0, 0, ifelse(data_p$debutvacance<=2016, 1,0))
+data_p$ld_vacancy[is.na(data_p$ld_vacancy)] <- 0
+
+data_p$vacance <- ifelse(data_p$ld_vacancy == 1, "Logements en vacance longue durée", 
+                  ifelse(data_p$vacancy == 1, "Logements en vacance frictionnelle", "Logements non vacants"))
+```
+
+Création de la partition : logements en vacance frictionnelle, logements en vacance structurelle, résidences principales, résidences secondes, résidences en location et résidus :
+```{r}
+data_p$prive_loc <- ifelse(data_p$ff_ccthp=='L', 1, 0)
+data_p$res_secondaire <- ifelse(data_p$ff_proba_rprs=='RS', 1, 0)
+data_p$prop_occ <- ifelse(data_p$ff_proba_rprs=='R', 1, 0)
+
+data_p$comparaison<- ifelse(data_p$ld_vacancy == 1, "Logements en vacance longue durée", 
+                  ifelse(data_p$vacancy == 1, "Logements en vacance frictionnelle",
+                  ifelse(data_p$prive_loc == 1, "Parc privé locatif", 
+                  ifelse(data_p$res_secondaire == 1, "Residences secondaires",ifelse(data_p$ff_ccthp == "P","Propriété occupante","Residus")))))
+
+print(sum(data_p$comparaison == "Residus")/nrow(data_p))
+
+data_p <- subset(data_p, comparaison!= "Residus")
+```
+
+## 4. Création des variables explicatives
+
+### 4.1. Caractéristiques des logements 
+
+```{r}
+data_p <- rename.variable(data_p,"ff_dteloc","maison")
+data_p$maison[data_p$maison==2] <- 0
+data_p$maison <- as.integer(data_p$maison)
+```
+
+La base compte 4% des logements qui ne sont occupés ni par leurs propriétaires, ni par des locataires, et qui ne sont pas comptabilisés comme des logements vacants ou des résidences secondaires. 
+```{r}
+data_p$ff_jannath[data_p$ff_jannath==0]<-NA
+print(summary(data_p$ff_jannath))
+```
+
+On remarque la variable ff_jannath compte 15 % de valeurs manquantes. On décide de séparer les années de construction des logements, en se basant sur les seuils établis par Béatrice, en rappelant que 1974 est la date de la première réglementation thermique. 
+```{r}
+data_p$construction <- ifelse(data_p$ff_jannath <1949, "Construction avant 1949", ifelse(data_p$ff_jannath <=1974, "Construction 1949-1974", ifelse(data_p$ff_jannath <= 1998, 'Construction 1975-1998', "Construction post 1999")))
+
+```
+
+On décide de créer une variable qui regroupe les logements de confort élevé (1, 2, 3 et 4), appelée confort_sup, et une variable qui regroupe les logements de bas confort (7 et 8), appelée confort_inf.
+```{r}
+data_p$confort_1_2_3_4 <-ifelse(data_p$ff_dcapec2 < 5, 1, 0)
+data_p$confort_1_2_3_4 <- na.fill(data_p$confort_1_2_3_4,0)
+
+data_p$confort_7_8 <-ifelse(data_p$ff_dcapec2 > 6 , 1, 0)
+data_p$confort_7_8 <- na.fill(data_p$confort_7_8,0)
+```
+
+On met toutes les dates au même format.
+```{r}
+data_p$annee_mutation <- year(dmy(data_p$anmutation))
+```
+
+On recode les variables baignoires, douches et wc, en isolant les logements qui ne présentent aucune baignoire, et ceux qui en comptent plus de 3. On crée également une variable nosani correspondant à l'absence d'équipement pour la toilette corporelle.
+
+
+```{r}
+#baignoires
+data_p$abs_baign <-ifelse(data_p$ff_dnbbai == 0, 1, 0)
+data_p$abs_baign <- na.fill(data_p$abs_baign,0)
+
+data_p$nb_baign_sup_3 <-ifelse(data_p$ff_dnbbai >= 3, 1,0 )
+data_p$nb_baign_sup_3 <- na.fill(data_p$nb_baign_sup_3,0)
+
+#douches
+data_p$abs_douche <-ifelse(data_p$ff_dnbdou == 0, 1, 0)
+data_p$abs_douche <- na.fill(data_p$abs_douche,0)
+
+data_p$nb_douche_sup_3 <-ifelse(data_p$ff_dnbdou >= 3, 1, 0)
+data_p$nb_douche_sup_3 <- na.fill(data_p$nb_douche_sup_3,0)
+
+#wc
+data_p$abs_wc <-ifelse(data_p$ff_dnbwc == 0, 1, 0)
+data_p$abs_wc <- na.fill(data_p$abs_wc,0)
+
+data_p$nb_wc_sup_3 <-ifelse(data_p$ff_dnbwc >= 3, 1, 0  )
+data_p$nb_wc_sup_3 <- na.fill(data_p$nb_wc_sup_3,0)
+
+#nosani
+data_p$nosani<-ifelse(data_p$ff_dnbbai+data_p$ff_dnbdou==0|data_p$ff_dnbwc==0,1,0)
+```
+
+On décide d'écarter de notre analyse la surface totale des logements, trop corrélées au nombre de pièces, et de se concentrer sur la surface par pièces. Concernant le nombre de pièces, on s'appuie sur les seuils établis par l'arbre de décision à l'échelle de l'Isère. 
+
+```{r}
+#surface par pièces
+data_p$surf_pp<-data_p$ff_stoth/data_p$ff_npiece_p2
+
+data_p$surf_pp_inf_10 <- ifelse(data_p$surf_pp<10, 1, 0)
+data_p$surf_pp_sup_30 <- ifelse(data_p$surf_pp>30, 1, 0)
+
+#pièces
+data_p$zero_piece <-ifelse(data_p$ff_npiece_p2 == 0, 1, 0)
+
+data_p$nb_piece_inf_1 <-ifelse(data_p$ff_npiece_p2 <= 1, 1, 0)
+data_p$nb_piece_sup_4 <- ifelse(data_p$ff_npiece_p2 > 4, 1, 0)
+```
+
+On décide enfin de supprimer les logements qui sont comptabilisés comme ne présentant aucune pièce, et dont la surface habitable est supérieure à 9 mètres carrés. En effet, ces logements représentent sûrement des erreurs de saisie, et représentent une très faible portion de la base (8258 lignes). 
+
+```{r}
+data_p <- data_p %>% filter(zero_piece == 0 | ff_stoth > 9 )
+```
+
+En ce qui concerne la dépendance d'un logement, on crée des variables correspondant à sa surface, à son existence et une pour séparer les logements qui disposent d'une grande dépendance, avec 15 mètres carrés comme seuil spécifié par l'arbre de classification. 
+
+```{r}
+data_p$dependance<-data_p$ff_slocal - data_p$ff_stoth
+data_p$dep_sup_15 <-ifelse(data_p$dependance > 15, 1, 0)
+data_p$existence_dep <- ifelse(data_p$dependance > 0, 1, 0)
+data_p$dep_sup_15 <- na.fill(data_p$dep_sup_15,0)
+data_p$existence_dep <- na.fill(data_p$existence_dep,0)
+```
+
+
+```{r}
+data_p$coprop<-ifelse(data_p$ff_ctpdl == "",0,1)
+data_p$coprop<-na.fill(data_p$coprop,0)
+data_p$coprop<-as.factor(data_p$coprop)
+```
+
+### 4.2. Caractéristiques propres aux logements vacants
+
+On met toutes les dates au même format.
+
+```{r}
+data_p$annee_mutation <- year(dmy(data_p$anmutation))
+```
+
+On décide de distinguer les logements qui présente une année de mutation récente, de ceux qui présentent une année de mutation ancienne. 
+```{r}
+data_p$mutation_post_2010 <- ifelse(data_p$annee_mutation >= 2010, 1, 0  )
+data_p$mutation_post_2010 <- na.fill(data_p$mutation_post_2010,0)
+```
+
+### 4.3. Caractéristiques des propriétaires
+
+On crée une nouvelle variable factorielle grâce à ff_catpro2txt.
+Afin de combler les NA, nous allons croiser cette variable avec ff_ccogrm, où les NA correspondent à des personnes physiques.
+
+```{r}
+data_p$type_proprietaire<- factor(ifelse(data_p$ff_catpro2txt=="PERSONNE PHYSIQUE","Personne physique",
+                              ifelse(grepl("SOCIETE CIVILE",data_p$ff_catpro2txt),"Société civile",
+                              ifelse(grepl("INVESTISSEUR PROFESSIONNEL",data_p$ff_catpro2txt),"Investisseur professionnel",
+                              ifelse(is.na(data_p$ff_ccogrm) == TRUE, "Personne physique",NA)))))
+```
+
+Le nombre de NA restant élevé, on crée une autre variable, uniquement basée sur ff_ccogrm, permettant de savoir s'il s'agit d'une personne morale ou physique.
+```{r}
+data_p$pers_morale <- ifelse(data_p$ff_ccogrm == 7 | data_p$ff_ccogrm == 8 | is.na(data_p$ff_ccogrm),0,1)
+```
+
+Certaines années de naissance ont une valeur de 0. Comme il s'agit d'une valeur aberrantes, on les met en NA.
+```{r}
+data_p$ff_annss[data_p$ff_annss==0]<-NA
+data_p$ff_annss[data_p$ff_annss < 1910 ]<-NA
+```
+
+On crée des catégories d'années de naissance en s'appuyant sur des seuils établis par l'arbre de classification. 
+```{r}
+data_p$naissance_proprietaire <- ifelse(data_p$ff_annss<1939, "Naissance avant 1939", ifelse(data_p$ff_annss>=1939 & data_p$ff_annss<=1964, "Naissance entre 1939 et 1964", " après 1964"))
+```
+
+Certains propriétaires ont 0 droit, que l'on recode comme étant des NA.
+```{r}
+data_p <- rename.variable(data_p,"ff_ndroit","nb_droits")
+data_p$nb_droits[data_p$nb_droits==0]<-NA
+```
+
+On recode la variable correspondant au nombre de droits en 2 variables binaires.  **nb_droits_sup_3** vaut 1 si le nombre de droits est supérieur ou égal à 3, alors que **nb_droits_unique** vaut 1 si le nombre de droits est de 1.
+
+```{r}
+data_p$nb_droits_sup_3 <- ifelse(data_p$nb_droits>3,1,0)
+data_p$nb_droits_unique <- ifelse(data_p$nb_droits==1,1,0)
+```
+
+On crée une fonction correspondant au nombre de logements détenus par chaque propriétaire.
+```{r}
+data_p <- data_p %>%
+  group_by(ff_idppre)%>%
+  mutate(nb_logements = n())
+
+print(describe(data_p$nb_logements))
+```
+
+On recode cette variable en 2 variables binaires : **nb_logements_sup_3** vaut 1 lorsque le propriétaire détient plus de 3 logements à son actif (3e quantile), 0 sinon. **logement_unique** vaut 1 lorsque le propriétaire possède un seul logement, 0 s'il en possède plusieurs.
+
+```{r}
+data_p$nb_logements_sup_3 <- ifelse(data_p$nb_logements >= 3,1,0)
+data_p$logement_unique <- ifelse(data_p$nb_logements==1,1,0)
+```
+
+On renomme la variable correspondant à la location en **proximite** qui vaut "Même commune" si le propriétaire réside dans la même commune que le logement vacant, "Même département" s'il vit dans le même département, "Même région", s'il vit dans la même région, et "Ailleurs" s'il habite ailleurs dans la métropole, en outre-mer ou à l'étranger.
+```{r}
+data_p<-rename.variable(data_p,"ff_locprop","proximite")
+data_p$proximite <- factor(ifelse(data_p$proximite==1, "Même commune",
+                           ifelse(data_p$proximite==2, "Même département",
+                           ifelse(data_p$proximite==3, "Même région",
+                           ifelse(data_p$proximite==4 | data_p$proximite==5 | data_p$proximite==6 | data_p$proximite==9,"Ailleurs",0)))))
+data_p[is.na(data_p$proximite),"proximite"] <- "Ailleurs"
+```
+
+On va ainsi créer une variable binaire **proximite_commune** qui vaut 1 si le propriétaire habite dans la même commune que son logement vacant, et 0 sinon.
+```{r}
+data_p$proximite_commune <- ifelse(data_p$proximite=="Même commune",1,0)
+```
+
+Création de l'indicatrice correspondant à la taxe sur les logements vacants
+```{r}
+data_taxe<-rename.variable(data_taxe,"Code commune INSEE","codecommune")
+data_taxe<-rename.variable(data_taxe,"Type de taxation sur la vacance","taxe_vac")
+data_taxe$taxe_vac <- ifelse(data_taxe$taxe_vac=='TLV'|data_taxe$taxe_vac=='THLV' , 1, 0)
+data_taxe$codecommune <- as.numeric(sprintf("%05d", as.numeric(data_taxe$codecommune)))
+```
+
+NA = Corse
+
+## 5. Renommage de certaines variables 
+
+On renomme les variables qui indiquent des précisions géographiques et celle correspondant à la taxe.
+
+```{r}
+data_p<-rename.variable(data_p,"ff_idsec","cadastre")
+data_p<-rename.variable(data_p,"codgeo_2020","codecommune")
+data_p<-rename.variable(data_p,"ff_ccodep","dep")
+data_p<-rename.variable(data_p,"ff_x","geo_x")
+data_p<-rename.variable(data_p,"ff_y","geo_y")  
+
+data_p$dep_nom <- factor(ifelse(data_p$dep==1, "Ain",
+                         ifelse(data_p$dep==3, "Allier",
+                         ifelse(data_p$dep==7, "Ardèche",
+                         ifelse(data_p$dep==15, "Cantal",
+                         ifelse(data_p$dep==26, "Drôme",
+                         ifelse(data_p$dep==38, "Isère",
+                         ifelse(data_p$dep==42, "Loire",
+                         ifelse(data_p$dep==43, "Haute-Loire",
+                         ifelse(data_p$dep==63, "Puy-de-Dôme",
+                         ifelse(data_p$dep==69, "Rhône",
+                         ifelse(data_p$dep==73, "Savoie",
+                         ifelse(data_p$dep==74, "Haute-Savoie",0)))))))))))))
+```
+
+## 6. Merge de data_p et de data_taxe 
+
+```{r}
+data_finale <- left_join(data_p,data_taxe,by="codecommune")
+```
+
+## 7. Exportation de la base finale 
+
+```{r}
+rm(data_p)
+rm(data_taxe)
+write.csv(data_finale, "data_tmp.csv")
+```
+
+```{r}
+data_isere <- filter(data_finale, data$dep == "38")
+write.csv(data_isere, "data_isere.csv")
+```
+
